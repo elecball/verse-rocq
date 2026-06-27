@@ -1,0 +1,33 @@
+# Rocq / Coq build artifacts
+*.vo
+*.vos
+*.vok
+*.glob
+*.aux
+*.v.d
+*.crashcoqide
+.coq-native/
+
+# CoqMakefile generated files
+CoqMakefile
+CoqMakefile.conf
+.CoqMakefile.d
+
+# opam / dune build
+_build/
+_opam/
+*.install
+
+# Editor artifacts
+.vscode/
+*.bak
+*~
+\#*\#
+.#*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Reference papers (not tracked)
+*.pdf
