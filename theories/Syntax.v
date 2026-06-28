@@ -1,146 +1,60 @@
-(** * Syntax of the Verse Calculus (Fig. 1)
-
-    Named-variable representation with the Barendregt convention.
-    Variables are Metalib [atom]s (= positive integers).
-    Binders: [e_lam x e] for λx.e, [e_ex x e] for ∃x.e.
-    Well-scoping invariant [ws S e] (Barendregt): every binder in [e]
-    introduces a name fresh from [S] and from all other binders in [e].
-    Top-level: [wf e  :=  ws (fv e) e].
-*)
-
-Require Import Metalib.Metatheory.
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.Lists.List.
+From Stdlib Require Import List ZArith.
 Import ListNotations.
 
-(* ================================================================= *)
-(** ** Primitive operators *)
+Definition var := nat.
 
-Inductive primop : Type := op_gt | op_add.
+Definition vlt (x y : var) : Prop := Nat.lt x y.
+Definition vle (x y : var) : Prop := Nat.le x y.
+Definition vltb (x y : var) : bool := Nat.ltb x y.
+Definition vleb (x y : var) : bool := Nat.leb x y.
 
-(* ================================================================= *)
-(** ** Expressions
-
-    e  ::= v | eq; e | ∃x. e | fail | e₁ | e₂ | v₁ v₂ | one{e} | all{e}
-    eq ::= e | v = e
-    v  ::= x | hnf
-    hnf ::= k | op | ⟨v₁,…,vₙ⟩ | λx. e
-*)
+Inductive primop : Type :=
+  | Add : primop
+  | Gt  : primop.
 
 Inductive expr : Type :=
-  | e_var    : atom   -> expr                  (* x              *)
-  | e_int    : Z      -> expr                  (* k              *)
-  | e_op     : primop -> expr                  (* gt | add       *)
-  | e_lam    : atom   -> expr -> expr          (* λx. e  binder  *)
-  | e_ex     : atom   -> expr -> expr          (* ∃x. e  binder  *)
-  | e_app    : expr   -> expr -> expr          (* v₁ v₂          *)
-  | e_seq    : expr   -> expr -> expr          (* e₁; e₂         *)
-  | e_eqn    : expr   -> expr -> expr          (* v = e          *)
-  | e_fail   : expr                            (* fail           *)
-  | e_choice : expr   -> expr -> expr          (* e₁ | e₂        *)
-  | e_one    : expr   -> expr                  (* one{e}         *)
-  | e_all    : expr   -> expr                  (* all{e}         *)
-  | e_tuple  : list expr -> expr.              (* ⟨v₁,…,vₙ⟩      *)
+  | ValE    : val -> expr
+  | SeqE    : eqn -> expr -> expr      (* eq; e *)
+  | ExE     : var -> expr -> expr      (* Ex. e *)
+  | FailE   : expr
+  | ChoiceE : expr -> expr -> expr     (* e1 <|> e2  *)
+  | AppE    : val -> val -> expr       (* v1 v2 (application) *)
+  | OneE    : expr -> expr             (* one{e} *)
+  | AllE    : expr -> expr             (* all{e} *)
 
-(* ================================================================= *)
-(** ** Free and bound variables *)
+with val : Type :=
+  | VarV : var -> val
+  | HnfV : hnf -> val
 
-Fixpoint fv (e : expr) : atoms :=
-  match e with
-  | e_var x        => singleton x
-  | e_int _        => empty
-  | e_op  _        => empty
-  | e_lam x body   => remove x (fv body)
-  | e_ex  x body   => remove x (fv body)
-  | e_app e1 e2    => fv e1 `union` fv e2
-  | e_seq e1 e2    => fv e1 `union` fv e2
-  | e_eqn e1 e2    => fv e1 `union` fv e2
-  | e_fail         => empty
-  | e_choice e1 e2 => fv e1 `union` fv e2
-  | e_one e        => fv e
-  | e_all e        => fv e
-  | e_tuple vs     => fold_right (fun e' acc => fv e' `union` acc) empty vs
-  end.
+with hnf : Type :=
+  | IntH : Z -> hnf
+  | OpH  : primop -> hnf
+  | TupH : list val -> hnf             (* <v1, ..., vn> *)
+  | LamH : var -> expr -> hnf          (* \x. e *)
 
-Fixpoint bv (e : expr) : atoms :=
-  match e with
-  | e_lam x body   => singleton x `union` bv body
-  | e_ex  x body   => singleton x `union` bv body
-  | e_app e1 e2    => bv e1 `union` bv e2
-  | e_seq e1 e2    => bv e1 `union` bv e2
-  | e_eqn e1 e2    => bv e1 `union` bv e2
-  | e_choice e1 e2 => bv e1 `union` bv e2
-  | e_one e        => bv e
-  | e_all e        => bv e
-  | e_tuple vs     => fold_right (fun e' acc => bv e' `union` acc) empty vs
-  | _              => empty
-  end.
+with eqn : Type :=
+  | ExprEqn : expr -> eqn              (* plain expression as eqn *)
+  | EqEqn   : val -> expr -> eqn.      (* v = e *)
 
-(* ================================================================= *)
-(** ** Barendregt well-scoping
+(** A program is one{e} where e is closed. *)
+Definition program := expr.
 
-    [ws S e]: every binder in [e] introduces a name fresh from [S]
-    and from all other binders encountered so far.
-    [S] accumulates both the "outer free variables" and previously seen
-    bound names, ensuring all binders are globally distinct.
-*)
+(** Coercions for conciseness. *)
+Definition int_to_hnf (z : Z) : hnf := IntH z.
+Definition op_to_hnf (op : primop) : hnf := OpH op.
 
-Inductive ws : atoms -> expr -> Prop :=
-  | ws_var    : forall S x,         ws S (e_var x)
-  | ws_int    : forall S k,         ws S (e_int k)
-  | ws_op     : forall S o,         ws S (e_op o)
-  | ws_fail   : forall S,           ws S e_fail
-  | ws_lam    : forall S x body,
-      x `notin` S ->
-      ws (S `union` singleton x) body ->
-      ws S (e_lam x body)
-  | ws_ex     : forall S x body,
-      x `notin` S ->
-      ws (S `union` singleton x) body ->
-      ws S (e_ex x body)
-  | ws_app    : forall S e1 e2,     ws S e1 -> ws S e2 -> ws S (e_app e1 e2)
-  | ws_seq    : forall S e1 e2,     ws S e1 -> ws S e2 -> ws S (e_seq e1 e2)
-  | ws_eqn    : forall S e1 e2,     ws S e1 -> ws S e2 -> ws S (e_eqn e1 e2)
-  | ws_choice : forall S e1 e2,     ws S e1 -> ws S e2 -> ws S (e_choice e1 e2)
-  | ws_one    : forall S e,         ws S e  -> ws S (e_one e)
-  | ws_all    : forall S e,         ws S e  -> ws S (e_all e)
-  | ws_tuple  : forall S vs,        Forall (ws S) vs -> ws S (e_tuple vs).
+Coercion VarV       : var        >-> val.
+Coercion HnfV       : hnf        >-> val.
+Coercion ValE       : val        >-> expr.
+Coercion ExprEqn    : expr       >-> eqn.
+Coercion int_to_hnf : Z          >-> hnf.
+Coercion op_to_hnf  : primop     >-> hnf.
 
-(** Full Barendregt condition: binders fresh from free variables and each other. *)
-Definition wf (e : expr) : Prop := ws (fv e) e.
+(** Notations matching the paper. *)
+Declare Scope vc_scope.
+Open Scope vc_scope.
 
-(** Monotonicity: well-scoping is preserved by enlarging S. *)
-Lemma ws_weaken : forall S T e,
-    ws S e -> S [<=] T -> ws T e.
-Proof.
-  intros S T e H. revert T.
-  induction H; intros T Hsub; constructor; auto.
-  - apply IHws. fsetdec.
-  - apply IHws. fsetdec.
-  - apply IHws. fsetdec.
-  - apply IHws. fsetdec.
-  - eapply Forall_impl; [| exact H].
-    intros e' He'. apply He'. exact Hsub.
-Qed.
-
-(* ================================================================= *)
-(** ** Head-normal forms and values *)
-
-(** hnf ::= k | op | ⟨v₁,…,vₙ⟩ | λx. e *)
-Inductive is_hnf : expr -> Prop :=
-  | hnf_int   : forall k,   is_hnf (e_int k)
-  | hnf_op    : forall o,   is_hnf (e_op o)
-  | hnf_tuple : forall vs,  is_hnf (e_tuple vs)
-  | hnf_lam   : forall x e, is_hnf (e_lam x e).
-
-(** v ::= x | hnf *)
-Inductive is_val : expr -> Prop :=
-  | val_var : forall x,  is_val (e_var x)
-  | val_hnf : forall e,  is_hnf e -> is_val e.
-
-Lemma is_val_hnf : forall e, is_hnf e -> is_val e.
-Proof. intros. apply val_hnf. exact H. Qed.
-
-(** hnf is never a variable. *)
-Lemma hnf_not_var : forall x, ~ is_hnf (e_var x).
-Proof. intros x H. inversion H. Qed.
+Notation "e1 <|> e2"    := (ChoiceE e1 e2) (at level 50, left associativity) : vc_scope.
+Notation "q ';' e"      := (SeqE q e)      (at level 60, right associativity) : vc_scope.
+Notation "'EX' x , e"   := (ExE x e)       (at level 65, right associativity) : vc_scope.
+Notation "v '=e' e"     := (EqEqn v e)     (at level 40)                     : vc_scope.
