@@ -1,0 +1,7 @@
+-R theories VersRocq
+
+theories/Syntax.v
+theories/Contexts.v
+theories/Subst.v
+theories/Step.v
+theories/Confluence.v
