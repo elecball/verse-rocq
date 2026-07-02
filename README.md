@@ -8,27 +8,21 @@ Lennart Augustsson, Joachim Breitner, Koen Claessen, Ranjit Jhala, Simon Peyton 
 Olin Shivers, Guy L. Steele Jr., Tim Sweeney.
 *The Verse Calculus: A Core Calculus for Deterministic Functional Logic Programming.*
 Proc. ACM Program. Lang., Vol. 7, ICFP, Article 203 (2023).
-https://doi.org/10.1145/3607845
+https://doi.org/10.1145/3607845 (https://simon.peytonjones.org/assets/pdfs/verse-icfp23.pdf)
 
 ## Structure
 
 ```
 theories/
-  Syntax.v   -- syntax (expr, val, hnf, eqn), free variables, Fig. 1
-  Context.v  -- contexts and context filling, Fig. 4
-  Rewrite.v  -- 31 rewrite rules (all of Fig. 3)
+  Syntax.v     -- syntax (expr, val, hnf, eqn), free variables, Fig. 1
+  Context.v    -- contexts and context filling, Fig. 4
+  Rewrite.v    -- all 32 rewrite rules of Fig. 3
+  AppendixB.v  -- Appendix B: abstract confluence theory
 ```
-
-## What's Implemented
-
-- Core language syntax and semantics
-- Substitution and free variable analysis
-- All application, unification, elimination, normalization, and choice rules
-- Context-based execution model
 
 ## TODO
 
-- Chapter 4 - end
+- Appendix C
 
 ## Build
 

@@ -3,3 +3,4 @@
 theories/Syntax.v
 theories/Context.v
 theories/Rewrite.v
+theories/AppendixB.v

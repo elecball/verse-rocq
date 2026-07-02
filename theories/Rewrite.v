@@ -4,6 +4,8 @@ From VersRocq Require Import Syntax Context.
 Open Scope Z_scope.
 Open Scope vc_scope.
 
+(* Helper Functions *)
+
 Fixpoint fvs_e (e : expr) : list var :=
   match e with
   | ValE v        => fvs_v v
@@ -99,7 +101,7 @@ Fixpoint aux_app_tup (x : var) (i : Z) (vs : list val) : expr :=
   match vs with
   | [] => FailE
   | v :: nil => (EqEqn x i); (ValE v)
-  | v :: vs' => 
+  | v :: vs' =>
     ((EqEqn x i); v) <|> (aux_app_tup x (i + 1) vs')
   end.
 
@@ -135,93 +137,98 @@ Fixpoint aux_all_choice (e : expr) : option (list val) :=
   | _ => None
   end.
 
-Inductive step : expr -> expr -> Prop :=
+(* rewriting rules *)
+
+Inductive verse_step : expr -> expr -> Prop :=
   | AppAdd : forall (k1 k2 : Z),
-      step (AppE Add (TupH ((HnfV k1) :: (HnfV k2) :: nil))) (k1 + k2)
+      verse_step (AppE Add (TupH ((HnfV k1) :: (HnfV k2) :: nil))) (k1 + k2)
   | AppGt : forall (k1 k2 : Z),
       k2 < k1 ->
-      step (AppE Gt (TupH ((HnfV k1) :: (HnfV k2) :: nil))) k1
+      verse_step (AppE Gt (TupH ((HnfV k1) :: (HnfV k2) :: nil))) k1
   | AppGtFail : forall (k1 k2 : Z),
       k1 <= k2 ->
-      step (AppE Gt (TupH ((HnfV k1) :: (HnfV k2) :: nil))) FailE
+      verse_step (AppE Gt (TupH ((HnfV k1) :: (HnfV k2) :: nil))) FailE
   | AppBeta : forall (x : var) (e : expr) (v : val),
       ~ In x (fvs_v v) ->
-      step (AppE (LamH x e) v)
+      verse_step (AppE (LamH x e) v)
           (ExE x ((EqEqn x v); e))
   | AppTup : forall (x : var) (vs : list val) (v : val),
-      ~ In x (fvs_vs (v :: vs)) -> 
-      step (AppE (TupH vs) v)
+      vs <> [] ->
+      ~ In x (fvs_vs (v :: vs)) ->
+      verse_step (AppE (TupH vs) v)
            (ExE x ((EqEqn x v); (aux_app_tup x 0 vs)))
+  | AppTup0 : forall (v : val),
+      verse_step (AppE (TupH []) v) FailE
 
 
   | UniLit : forall (k : Z) (e : expr),
-      step ((EqEqn k k); e) e
+      verse_step ((EqEqn k k); e) e
   | UniTup : forall (vs vs' : list val) (e : expr),
-      step ((EqEqn (TupH vs) (TupH vs')); e) (aux_uni_tup vs vs' e)
+      verse_step ((EqEqn (TupH vs) (TupH vs')); e) (aux_uni_tup vs vs' e)
   | UniFail : forall (h1 h2 : hnf) (e : expr),
       aux_uni_fail h1 h2 ->
-      step ((EqEqn h1 h2); e) FailE
+      verse_step ((EqEqn h1 h2); e) FailE
   | UniOccurs : forall (x : var) (V : vctx) (e : expr),
-      step ((EqEqn x (vfill V x)); e)
+      verse_step ((EqEqn x (vfill V x)); e)
         (match V with
           | VHole => e
           | VTup _ _ => FailE
           end)
   | UniSubst : forall (X : xctx) (x : var) (v : val) (e : expr),
       (forall V : vctx, v <> vfill V x) ->
-      step (xfill X ((EqEqn x v); e))
+      verse_step (xfill X ((EqEqn x v); e))
            (xfill (subst_xctx X v x) ((EqEqn x v); (subst_expr e v x)))
   | UniHnfSwap : forall (h : hnf) (v : val) (e : expr),
-      step ((EqEqn h v); e) ((EqEqn v h); e)
+      verse_step ((EqEqn h v); e) ((EqEqn v h); e)
   | UniVarSwap : forall (x y : var) (e : expr),
       vlt x y ->
-      step ((EqEqn (VarV y) (VarV x)); e) 
+      verse_step ((EqEqn (VarV y) (VarV x)); e)
           ((EqEqn (VarV x) (VarV y)); e)
   | UniSeqSwap : forall (q : eqn) (x : var) (v : val) (e : expr),
       ~(match q with
         | EqEqn (VarV y) (ValE _) => vleb y x = true
         | _ => False
         end) ->
-      step (q; (EqEqn x v); e) ((EqEqn x v); q; e)
+      verse_step (q; (EqEqn x v); e) ((EqEqn x v); q; e)
 
 
   | ElimVal : forall (v : val) (e : expr),
-      step (SeqE v e) e
+      verse_step (SeqE v e) e
   | ElimExi : forall (x : var) (e : expr),
       ~ In x (fvs_e e) ->
-      step (ExE x e) e
+      verse_step (ExE x e) e
   | ElimEqn : forall (x : var) (X : xctx) (v : val) (e : expr),
       ~ In x (fvs_e (xfill X e)) ->
       ~ In x (fvs_v v) ->
-      step (ExE x (xfill X (SeqE (EqEqn x v) e))) (xfill X e)
+      verse_step (ExE x (xfill X (SeqE (EqEqn x v) e))) (xfill X e)
   | ElimFail : forall (X : xctx),
-      step (xfill X FailE) FailE
-      
+      verse_step (xfill X FailE) FailE
+
 
   | ExiFloat : forall (X : xctx) (x : var) (e : expr),
       ~ In x (fvs_xctx X) ->
-      step (xfill X (ExE x e)) (ExE x (xfill X e))
+      verse_step (xfill X (ExE x e)) (ExE x (xfill X e))
   | SeqAssoc : forall (q : eqn) (e1 e2 : expr),
-      step ((q; e1); e2) (q; (e1; e2))
+      verse_step ((q; e1); e2) (q; (e1; e2))
   | EqnFloat : forall (v : val) (q : eqn) (e1 e2 : expr),
-      step ((EqEqn v (q; e1)); e2) (q; ((EqEqn v e1); e2))
+      verse_step ((EqEqn v (q; e1)); e2) (q; ((EqEqn v e1); e2))
   | ExiSwap : forall (x y : var) (e : expr),
-      step (ExE x (ExE y e)) (ExE y (ExE x e))
+      verse_step (ExE x (ExE y e)) (ExE y (ExE x e))
 
 
-  | OneFail : step (OneE FailE) FailE
-  | OneValue : forall (v : val), step (OneE v) v
+  | OneFail : verse_step (OneE FailE) FailE
+  | OneValue : forall (v : val), verse_step (OneE v) v
   | OneChoice : forall (v : val) (e : expr),
-      step (OneE (v <|> e)) v
-  | AllFail : step (AllE FailE) (TupH nil)
-  | AllValue : forall (v : val), step (AllE v) (TupH [v])
+      verse_step (OneE (v <|> e)) v
+  | AllFail : verse_step (AllE FailE) (TupH nil)
+  | AllValue : forall (v : val), verse_step (AllE v) (TupH [v])
   | AllChoice : forall (e : expr) (vs : list val),
       aux_all_choice e = Some vs ->
-      step (AllE e) (TupH vs)
-  | ChooseR : forall (e : expr), step (FailE <|> e) e
-  | ChooseL : forall (e : expr), step (e <|> FailE) e
+      verse_step (AllE e) (TupH vs)
+  | ChooseR : forall (e : expr), verse_step (FailE <|> e) e
+  | ChooseL : forall (e : expr), verse_step (e <|> FailE) e
   | ChooseAssoc : forall (e1 e2 e3 : expr),
-      step ((e1 <|> e2) <|> e3) (e1 <|> (e2 <|> e3))
+      verse_step ((e1 <|> e2) <|> e3) (e1 <|> (e2 <|> e3))
   | Choose : forall (SX : sx) (CX : cx) (e1 e2 : expr),
-      step (sxfill SX (cxfill CX (e1 <|> e2))) (sxfill SX ((cxfill CX e1) <|> (cxfill CX e2)))
+      verse_step (sxfill SX (cxfill CX (e1 <|> e2))) (sxfill SX ((cxfill CX e1) <|> (cxfill CX e2)))
 .
